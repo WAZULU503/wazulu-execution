@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"wazulu/execution/cas"
+	"wazulu/execution/log"
 )
 
 func main() {
@@ -17,12 +18,23 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Println("Stored CAS object:", hash)
+	fmt.Println("CAS stored:", hash)
 
-	obj, err := cas.Load(hash)
+	entry, err := log.Append(
+		"node-01",
+		"execution_intent",
+		hash,
+	)
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Println("Loaded CAS object:", string(obj))
+	fmt.Println("Log entry appended:", entry.Seq)
+
+	err = log.Verify()
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Ledger verification OK")
 }
