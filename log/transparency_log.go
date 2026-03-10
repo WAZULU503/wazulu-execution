@@ -1,7 +1,7 @@
 package log
 
 import (
-	"bytes"
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,59 +10,88 @@ import (
 	"time"
 )
 
-const LedgerFile = "ledger.jsonl"
-
 type LogEntry struct {
 	ProtocolVersion int    `json:"protocol_version"`
 	DecisionVersion int    `json:"decision_version"`
+	Seq             int    `json:"seq"`
+	Timestamp       int64  `json:"timestamp"`
+	ActorID         string `json:"actor_id"`
+	EventType       string `json:"event_type"`
+	PayloadHash     string `json:"payload_hash"`
+	PrevHash        string `json:"prev_hash"`
+	EntryHash       string `json:"entry_hash"`
+}
 
-	Seq       uint64 `json:"seq"`
-	Timestamp int64  `json:"timestamp"`
+type TransparencyLog struct {
+	Path string
+}
 
-	ActorID   string `json:"actor_id"`
-	EventType string `json:"event_type"`
+func NewTransparencyLog(path string) *TransparencyLog {
+	return &TransparencyLog{Path: path}
+}
 
-	PayloadHash string `json:"payload_hash"`
+func (l *TransparencyLog) loadEntries() ([]LogEntry, error) {
 
-	PrevHash  string `json:"prev_hash"`
-	EntryHash string `json:"entry_hash"`
+	file, err := os.Open(l.Path)
+	if err != nil {
+
+		if os.IsNotExist(err) {
+			return []LogEntry{}, nil
+		}
+
+		return nil, err
+	}
+
+	defer file.Close()
+
+	var entries []LogEntry
+
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+
+		var e LogEntry
+
+		err := json.Unmarshal(scanner.Bytes(), &e)
+		if err != nil {
+			return nil, err
+		}
+
+		entries = append(entries, e)
+	}
+
+	return entries, nil
 }
 
 func computeEntryHash(e LogEntry) string {
 
 	data := fmt.Sprintf(
-		"WZLOGv1|%d|%d|%d|%d|%s|%s|%s|%s",
-		e.ProtocolVersion,
-		e.DecisionVersion,
+		"WZLOGv1|%d|%d|%d|%s|%s|%s",
 		e.Seq,
 		e.Timestamp,
-		e.ActorID,
+		e.ProtocolVersion,
 		e.EventType,
 		e.PayloadHash,
 		e.PrevHash,
 	)
 
 	hash := sha256.Sum256([]byte(data))
+
 	return hex.EncodeToString(hash[:])
 }
 
-func Append(actorID, eventType, payloadHash string) (*LogEntry, error) {
+func (l *TransparencyLog) Append(actorID string, eventType string, payloadHash string) (*LogEntry, error) {
 
-	var prevHash string
-	var seq uint64 = 0
+	entries, err := l.loadEntries()
+	if err != nil {
+		return nil, err
+	}
 
-	if data, err := os.ReadFile(LedgerFile); err == nil {
+	seq := len(entries)
 
-		lines := bytesSplitLines(data)
-
-		if len(lines) > 0 {
-
-			var lastEntry LogEntry
-			json.Unmarshal(lines[len(lines)-1], &lastEntry)
-
-			prevHash = lastEntry.EntryHash
-			seq = lastEntry.Seq + 1
-		}
+	prevHash := ""
+	if seq > 0 {
+		prevHash = entries[seq-1].EntryHash
 	}
 
 	entry := LogEntry{
@@ -78,64 +107,62 @@ func Append(actorID, eventType, payloadHash string) (*LogEntry, error) {
 
 	entry.EntryHash = computeEntryHash(entry)
 
-	file, err := os.OpenFile(LedgerFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(l.Path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, err
 	}
 
 	defer file.Close()
 
-	jsonEntry, _ := json.Marshal(entry)
+	jsonEntry, err := json.Marshal(entry)
+	if err != nil {
+		return nil, err
+	}
 
-	file.Write(jsonEntry)
-	file.Write([]byte("\n"))
+	// write entry
+	_, err = file.Write(jsonEntry)
+	if err != nil {
+		return nil, err
+	}
+
+	// newline delimiter
+	_, err = file.Write([]byte("\n"))
+	if err != nil {
+		return nil, err
+	}
+
+	// force flush to disk (crash-safe write)
+	err = file.Sync()
+	if err != nil {
+		return nil, err
+	}
 
 	return &entry, nil
 }
 
-func bytesSplitLines(data []byte) [][]byte {
+func (l *TransparencyLog) Verify() error {
 
-	return bytes.Split(bytes.TrimSpace(data), []byte("\n"))
-}
-func Verify() error {
-
-	data, err := os.ReadFile(LedgerFile)
+	entries, err := l.loadEntries()
 	if err != nil {
 		return err
 	}
 
-	lines := bytesSplitLines(data)
+	for i := 0; i < len(entries); i++ {
 
-	var prevEntry *LogEntry
+		e := entries[i]
 
-	for i, line := range lines {
+		expectedHash := computeEntryHash(e)
 
-		var entry LogEntry
-		err := json.Unmarshal(line, &entry)
-		if err != nil {
-			return fmt.Errorf("invalid JSON at line %d", i)
+		if expectedHash != e.EntryHash {
+			return fmt.Errorf("entry hash mismatch at seq %d", e.Seq)
 		}
 
-		// 1️⃣ sequence continuity
-		if uint64(i) != entry.Seq {
-			return fmt.Errorf("sequence mismatch at %d", i)
-		}
-
-		// 2️⃣ recompute hash
-		expectedHash := computeEntryHash(entry)
-
-		if expectedHash != entry.EntryHash {
-			return fmt.Errorf("entry hash mismatch at %d", i)
-		}
-
-		// 3️⃣ check chain linkage
 		if i > 0 {
-			if entry.PrevHash != prevEntry.EntryHash {
-				return fmt.Errorf("prev_hash mismatch at %d", i)
+
+			if e.PrevHash != entries[i-1].EntryHash {
+				return fmt.Errorf("prev hash mismatch at seq %d", e.Seq)
 			}
 		}
-
-		prevEntry = &entry
 	}
 
 	return nil
