@@ -7,10 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 )
 
-type LogEntry struct {
+const ledgerFile = "ledger.jsonl"
+
+type Entry struct {
 	ProtocolVersion int    `json:"protocol_version"`
 	DecisionVersion int    `json:"decision_version"`
 	Seq             int    `json:"seq"`
@@ -22,35 +25,25 @@ type LogEntry struct {
 	EntryHash       string `json:"entry_hash"`
 }
 
-type TransparencyLog struct {
-	Path string
+func computeHash(data string) string {
+	h := sha256.Sum256([]byte(data))
+	return hex.EncodeToString(h[:])
 }
 
-func NewTransparencyLog(path string) *TransparencyLog {
-	return &TransparencyLog{Path: path}
-}
+func LoadLedger() ([]Entry, error) {
 
-func (l *TransparencyLog) loadEntries() ([]LogEntry, error) {
-
-	file, err := os.Open(l.Path)
+	file, err := os.OpenFile(ledgerFile, os.O_CREATE|os.O_RDONLY, 0644)
 	if err != nil {
-
-		if os.IsNotExist(err) {
-			return []LogEntry{}, nil
-		}
-
 		return nil, err
 	}
-
 	defer file.Close()
 
-	var entries []LogEntry
+	var entries []Entry
 
 	scanner := bufio.NewScanner(file)
-
 	for scanner.Scan() {
 
-		var e LogEntry
+		var e Entry
 
 		err := json.Unmarshal(scanner.Bytes(), &e)
 		if err != nil {
@@ -63,105 +56,67 @@ func (l *TransparencyLog) loadEntries() ([]LogEntry, error) {
 	return entries, nil
 }
 
-func computeEntryHash(e LogEntry) string {
+func AppendEntry(actor string, event string, payload string) (Entry, error) {
 
-	data := fmt.Sprintf(
-		"WZLOGv1|%d|%d|%d|%s|%s|%s",
-		e.Seq,
-		e.Timestamp,
-		e.ProtocolVersion,
-		e.EventType,
-		e.PayloadHash,
-		e.PrevHash,
-	)
-
-	hash := sha256.Sum256([]byte(data))
-
-	return hex.EncodeToString(hash[:])
-}
-
-func (l *TransparencyLog) Append(actorID string, eventType string, payloadHash string) (*LogEntry, error) {
-
-	entries, err := l.loadEntries()
+	entries, err := LoadLedger()
 	if err != nil {
-		return nil, err
+		return Entry{}, err
 	}
 
 	seq := len(entries)
 
-	prevHash := ""
+	prev := ""
 	if seq > 0 {
-		prevHash = entries[seq-1].EntryHash
+		prev = entries[seq-1].EntryHash
 	}
 
-	entry := LogEntry{
+	ts := time.Now().Unix()
+
+	data := strconv.Itoa(seq) + actor + event + payload + prev + strconv.FormatInt(ts, 10)
+
+	hash := computeHash(data)
+
+	entry := Entry{
 		ProtocolVersion: 1,
 		DecisionVersion: 1,
 		Seq:             seq,
-		Timestamp:       time.Now().Unix(),
-		ActorID:         actorID,
-		EventType:       eventType,
-		PayloadHash:     payloadHash,
-		PrevHash:        prevHash,
+		Timestamp:       ts,
+		ActorID:         actor,
+		EventType:       event,
+		PayloadHash:     payload,
+		PrevHash:        prev,
+		EntryHash:       hash,
 	}
 
-	entry.EntryHash = computeEntryHash(entry)
-
-	file, err := os.OpenFile(l.Path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(ledgerFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return nil, err
+		return Entry{}, err
 	}
-
 	defer file.Close()
 
-	jsonEntry, err := json.Marshal(entry)
-	if err != nil {
-		return nil, err
-	}
+	b, _ := json.Marshal(entry)
 
-	// write entry
-	_, err = file.Write(jsonEntry)
-	if err != nil {
-		return nil, err
-	}
+	file.Write(b)
+	file.Write([]byte("\n"))
 
-	// newline delimiter
-	_, err = file.Write([]byte("\n"))
-	if err != nil {
-		return nil, err
-	}
-
-	// force flush to disk (crash-safe write)
-	err = file.Sync()
-	if err != nil {
-		return nil, err
-	}
-
-	return &entry, nil
+	return entry, nil
 }
 
-func (l *TransparencyLog) Verify() error {
+func VerifyLedger() error {
 
-	entries, err := l.loadEntries()
+	entries, err := LoadLedger()
 	if err != nil {
 		return err
 	}
 
-	for i := 0; i < len(entries); i++ {
+	for i := range entries {
 
-		e := entries[i]
-
-		expectedHash := computeEntryHash(e)
-
-		if expectedHash != e.EntryHash {
-			return fmt.Errorf("entry hash mismatch at seq %d", e.Seq)
+		if i == 0 {
+			continue
 		}
 
-		if i > 0 {
-
-			if e.PrevHash != entries[i-1].EntryHash {
-				return fmt.Errorf("prev hash mismatch at seq %d", e.Seq)
-			}
+		if entries[i].PrevHash != entries[i-1].EntryHash {
+			return fmt.Errorf("ledger chain broken at seq %d", i)
 		}
 	}
 

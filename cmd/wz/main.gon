@@ -66,4 +66,4 @@ func main() {
 	fmt.Println("Signature :", sth.Signature)
 
 	os.Exit(0)
-}
+
