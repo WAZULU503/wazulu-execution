@@ -5,43 +5,105 @@ import (
 	"encoding/hex"
 )
 
-// ComputeMerkleRoot builds a Merkle root from a list of entry hashes.
-// Leaves are domain separated to avoid hash reuse across contexts.
-func ComputeMerkleRoot(entryHashes []string) string {
+func hashPair(a string, b string) string {
+	h := sha256.Sum256([]byte(a + b))
+	return hex.EncodeToString(h[:])
+}
 
-	if len(entryHashes) == 0 {
+func ComputeMerkleRoot(leaves []string) string {
+
+	if len(leaves) == 0 {
 		return ""
 	}
 
-	// convert hex hashes to raw leaf hashes
-	var level [][]byte
+	nodes := leaves
 
-	for _, h := range entryHashes {
+	for len(nodes) > 1 {
 
-		leaf := sha256.Sum256([]byte("WZMERKLEv1|" + h))
-		level = append(level, leaf[:])
-	}
+		var next []string
 
-	// build tree upward
-	for len(level) > 1 {
+		for i := 0; i < len(nodes); i += 2 {
 
-		var next [][]byte
-
-		for i := 0; i < len(level); i += 2 {
-
-			if i+1 == len(level) {
-				next = append(next, level[i])
-				continue
+			if i+1 < len(nodes) {
+				next = append(next, hashPair(nodes[i], nodes[i+1]))
+			} else {
+				next = append(next, hashPair(nodes[i], nodes[i]))
 			}
 
-			combined := append(level[i], level[i+1]...)
-			hash := sha256.Sum256(combined)
-
-			next = append(next, hash[:])
 		}
 
-		level = next
+		nodes = next
 	}
 
-	return hex.EncodeToString(level[0])
+	return nodes[0]
+}
+
+type MerkleProof struct {
+	Leaf   string
+	Path   []string
+	Index  int
+	Root   string
+}
+
+func GenerateProof(leaves []string, index int) MerkleProof {
+
+	var path []string
+	nodes := leaves
+	i := index
+
+	for len(nodes) > 1 {
+
+		var next []string
+
+		for j := 0; j < len(nodes); j += 2 {
+
+			left := nodes[j]
+			right := left
+
+			if j+1 < len(nodes) {
+				right = nodes[j+1]
+			}
+
+			next = append(next, hashPair(left, right))
+
+			if j == i || j+1 == i {
+
+				if j == i {
+					path = append(path, right)
+				} else {
+					path = append(path, left)
+				}
+
+				i = len(next) - 1
+			}
+		}
+
+		nodes = next
+	}
+
+	return MerkleProof{
+		Leaf:  leaves[index],
+		Path:  path,
+		Index: index,
+		Root:  nodes[0],
+	}
+}
+
+func VerifyProof(proof MerkleProof) bool {
+
+	hash := proof.Leaf
+	index := proof.Index
+
+	for _, sibling := range proof.Path {
+
+		if index%2 == 0 {
+			hash = hashPair(hash, sibling)
+		} else {
+			hash = hashPair(sibling, hash)
+		}
+
+		index = index / 2
+	}
+
+	return hash == proof.Root
 }

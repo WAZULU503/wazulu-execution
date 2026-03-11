@@ -1,21 +1,32 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 
 	"wazulu/execution/cas"
 	"wazulu/execution/log"
 )
 
+type WitnessRequest struct {
+	Root string `json:"root"`
+	Size int    `json:"size"`
+}
+
+type WitnessResponse struct {
+	WitnessID string `json:"witness_id"`
+	Signature string `json:"signature"`
+}
+
 func main() {
 
 	fmt.Println("Wazulu Execution Engine v1")
 
-	// Example payload
 	payload := []byte("hello wazulu")
 
-	// Store payload in CAS
 	hash, err := cas.Store(payload)
 	if err != nil {
 		panic(err)
@@ -23,15 +34,18 @@ func main() {
 
 	fmt.Println("CAS stored:", hash)
 
-	// Append to transparency log
-	entry, err := log.AppendEntry("node-01", "execution_intent", hash)
+	entry, err := log.AppendEntry(
+		"node-01",
+		"execution_intent",
+		hash,
+	)
+
 	if err != nil {
 		panic(err)
 	}
 
 	fmt.Println("Log entry appended:", entry.Seq)
 
-	// Verify ledger integrity
 	err = log.VerifyLedger()
 	if err != nil {
 		panic(err)
@@ -39,25 +53,22 @@ func main() {
 
 	fmt.Println("Ledger verification OK")
 
-	// Load entries from ledger
-	entries, err := log.LoadLedger()
+	ledger, err := log.LoadLedger()
 	if err != nil {
 		panic(err)
 	}
 
-	// Extract entry hashes
-	var leaves []string
-	for _, e := range entries {
-		leaves = append(leaves, e.EntryHash)
+	var hashes []string
+	for _, e := range ledger {
+		hashes = append(hashes, e.EntryHash)
 	}
 
-	// Compute Merkle root
-	root := log.ComputeMerkleRoot(leaves)
+	root := log.ComputeMerkleRoot(hashes)
 
 	fmt.Println("Merkle Root:", root)
 
-	// Generate Signed Tree Head
-	sth := log.GenerateSTH(root, len(leaves))
+	// USE CORRECT FUNCTION NAME
+	sth := log.GenerateSTH(root, len(hashes))
 
 	fmt.Println()
 	fmt.Println("Signed Tree Head")
@@ -65,5 +76,32 @@ func main() {
 	fmt.Println("Timestamp :", sth.Timestamp)
 	fmt.Println("Signature :", sth.Signature)
 
-	os.Exit(0)
+	req := WitnessRequest{
+		Root: root,
+		Size: len(hashes),
+	}
+
+	body, _ := json.Marshal(req)
+
+	resp, err := http.Post(
+		"http://localhost:9001/sign",
+		"application/json",
+		bytes.NewBuffer(body),
+	)
+
+	if err != nil {
+		fmt.Println()
+		fmt.Println("Witness not reachable")
+		os.Exit(0)
+	}
+
+	defer resp.Body.Close()
+
+	var witnessResp WitnessResponse
+	json.NewDecoder(resp.Body).Decode(&witnessResp)
+
+	fmt.Println()
+	fmt.Println("Witness Cosignature")
+	fmt.Println("Witness ID :", witnessResp.WitnessID)
+	fmt.Println("Signature  :", witnessResp.Signature)
 }
