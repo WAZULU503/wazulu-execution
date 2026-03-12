@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	wlog "wazulu-execution/log"
+	wlog "github.com/WAZULU503/wazulu-execution/log"
 )
 
 const version = "v1.4"

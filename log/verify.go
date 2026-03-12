@@ -1,57 +1,20 @@
-package log
+# remove the duplicate hash() function from verify.go automatically
+awk '
+BEGIN{skip=0}
+{
+  if(skip==0 && $0 ~ /^func hash\(/){skip=1; brace=0}
+  if(skip==1){
+      brace+=gsub(/{/,"{")
+      brace-=gsub(/}/,"}")
+      if(brace<=0){skip=0; next}
+      next
+  }
+  print
+}' log/verify.go > log/verify.go.tmp && mv log/verify.go.tmp log/verify.go
 
-import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"fmt"
-	"os"
-)
+# rebuild
+go build -o wz ./cmd/wz
 
-func VerifyLedger() error {
-
-	file, err := os.ReadFile(LedgerFile)
-	if err != nil {
-		return err
-	}
-
-	lines := split(string(file))
-
-	var prevHash string
-
-	for i, line := range lines {
-
-		var entry Entry
-
-		err := json.Unmarshal([]byte(line), &entry)
-		if err != nil {
-			return err
-		}
-
-		if entry.PrevHash != prevHash {
-			return fmt.Errorf("ledger broken at entry %d", i+1)
-		}
-
-		expected := hash(fmt.Sprintf("%d%s%s%s",
-			entry.Seq,
-			entry.EventType,
-			entry.PayloadHash,
-			entry.PrevHash,
-		))
-
-		if entry.EntryHash != expected {
-			return fmt.Errorf("hash mismatch at entry %d", i+1)
-		}
-
-		prevHash = entry.EntryHash
-	}
-
-	fmt.Println("Ledger verification OK")
-
-	return nil
-}
-
-func hash(data string) string {
-	h := sha256.Sum256([]byte(data))
-	return hex.EncodeToString(h[:])
-}
+# run program
+./wz exec
+./wz verify
