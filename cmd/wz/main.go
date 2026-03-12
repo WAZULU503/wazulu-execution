@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+
+	wlog "wazulu-execution/log"
 )
 
 const version = "v1.4"
@@ -34,18 +36,23 @@ func main() {
 }
 
 func runExecution() {
-	fmt.Println("Wazulu Execution Engine: exec")
-	fmt.Println("Execution event recorded (prototype)")
+
+	err := wlog.AppendEvent("execution", "prototype payload")
+
+	if err != nil {
+		fmt.Println("error:", err)
+		return
+	}
+
+	fmt.Println("Execution event recorded in ledger")
 }
 
 func runVerify() {
-	fmt.Println("Wazulu Execution Engine: verify")
-	fmt.Println("Ledger verification complete (prototype)")
+	fmt.Println("Ledger verification not implemented yet")
 }
 
 func runAudit() {
-	fmt.Println("Wazulu Execution Engine: audit")
-	fmt.Println("Audit complete (prototype)")
+	fmt.Println("Audit system not implemented yet")
 }
 
 func printHelp() {
