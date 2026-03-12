@@ -28,7 +28,7 @@ func main() {
 		runAudit()
 
 	case "version":
-		fmt.Println("Wazulu Execution", version)
+		fmt.Println("Wazulu Execution Engine", version)
 
 	default:
 		printHelp()
@@ -44,7 +44,7 @@ func runExecution() {
 		return
 	}
 
-	fmt.Println("Execution event recorded in ledger")
+	fmt.Println("Execution event recorded")
 }
 
 func runVerify() {
@@ -56,11 +56,19 @@ func runVerify() {
 		return
 	}
 
-	fmt.Println("Ledger integrity confirmed")
+	fmt.Println("Ledger verification OK")
 }
 
 func runAudit() {
-	fmt.Println("Audit system not implemented yet")
+
+	err := wlog.VerifyLedger()
+
+	if err != nil {
+		fmt.Println("Audit failed:", err)
+		return
+	}
+
+	fmt.Println("Ledger audit complete")
 }
 
 func printHelp() {
@@ -68,7 +76,7 @@ func printHelp() {
 	fmt.Println("")
 	fmt.Println("Usage:")
 	fmt.Println("  wz exec     Record execution event")
-	fmt.Println("  wz verify   Verify execution log")
+	fmt.Println("  wz verify   Verify ledger integrity")
 	fmt.Println("  wz audit    Run integrity audit")
 	fmt.Println("  wz version  Show version")
 }
