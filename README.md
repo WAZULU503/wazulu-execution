@@ -178,3 +178,10 @@ The system focuses on tamper-evident history, not guaranteeing that every event 
 ## Quick Start
 
 Clone repository
+
+---
+
+## Author
+
+Wazulu the ill Dravidian  
+GitHub: https://github.com/WAZULU503
