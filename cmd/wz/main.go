@@ -40,7 +40,7 @@ func runExecution() {
 	err := wlog.AppendEvent("execution", "prototype payload")
 
 	if err != nil {
-		fmt.Println("error:", err)
+		fmt.Println("Execution failed:", err)
 		return
 	}
 
@@ -48,7 +48,15 @@ func runExecution() {
 }
 
 func runVerify() {
-	fmt.Println("Ledger verification not implemented yet")
+
+	err := wlog.VerifyLedger()
+
+	if err != nil {
+		fmt.Println("Verification failed:", err)
+		return
+	}
+
+	fmt.Println("Ledger integrity confirmed")
 }
 
 func runAudit() {
