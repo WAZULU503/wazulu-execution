@@ -1,146 +1,108 @@
+cat << 'EOF' > README.md
 # Wazulu Execution
 Verifiable Execution Engine
 
-Project Status: Research Prototype  
-Language: Go  
-License: MIT  
-Version: v1.4  
+**Project Status:** Stable  
+**Language:** Go  
+**License:** MIT  
+**Version:** v1.0.0  
 
-Wazulu Execution is a research prototype that records system execution events in an append-only log and produces cryptographic commitments that allow the history of those events to be independently verified.
+Wazulu Execution is a standalone engine for recording system execution events in an append-only log and producing cryptographic commitments that allow the history of those events to be independently verified.
 
-The system converts runtime activity into cryptographically verifiable execution records.
+The system converts runtime activity into tamper-evident execution records using hash chains and Merkle tree commitments.
 
 ---
 
-# Overview
+## System Overview
 
-Traditional system logs rely on trust and can be modified or deleted.
+This project demonstrates transparency-log techniques applied to execution history.
 
-Wazulu Execution records events in a hash-chained transparency log, commits the log state using a Merkle tree, and produces signed checkpoints that allow independent verification of the system history.
+At a high level the system converts runtime activity into a verifiable integrity chain:
 
-Execution pipeline:
+execution event  
+↓  
+payload hash  
+↓  
+content-addressable storage (CAS)  
+↓  
+append-only ledger  
+↓  
+Merkle tree commitment  
+↓  
+Signed Tree Head (checkpoint)  
+↓  
+independent verification  
 
-```
-Execution Event
-       │
-       ▼
-Payload Hashing
-       │
-       ▼
-Append-only Log Entry
-       │
-       ▼
-Merkle Tree Commitment
-       │
-       ▼
-Signed Tree Head
-       │
-       ▼
+The result is an execution history that can be cryptographically audited instead of trusted.
+
+---
+
+## Why This Exists
+
+Traditional system logs rely on trust. Operators can modify, delete, or rewrite logs after the fact.
+
+Wazulu Execution explores a different model:
+
+execution history should be cryptographically verifiable rather than trusted.
+
+By combining content-addressable storage, append-only ledgers, Merkle commitments, and signed checkpoints, the system produces an execution history that can be independently verified by external auditors.
+
+---
+
+## Core Principles
+
+Append-only history  
+Log entries cannot be modified without breaking the hash chain.
+
+Cryptographic commitments  
+Merkle roots commit to the full log state.
+
+Independent verification  
+Anyone can recompute hashes and verify integrity.
+
+Minimal trust assumptions  
+Verification relies on cryptography rather than operator trust.
+
+---
+
+## Architecture
+
+Execution Event  
+↓  
+Payload Hashing  
+↓  
+CAS Evidence Store  
+↓  
+Append-Only Ledger  
+↓  
+Merkle Tree Commitment  
+↓  
+Signed Tree Head  
+↓  
 Verification / Audit
-```
-
-The goal is to make system behavior cryptographically auditable.
-
----
-
-# Design Goals
-
-Wazulu Execution focuses on a small set of core properties.
-
-### Deterministic verification
-Anyone can recompute hashes and verify log integrity independently.
-
-### Tamper-evident history
-Log entries are hash-linked, making modification detectable.
-
-### Transparent state commitment
-Merkle roots provide cryptographic commitments to log state.
-
-### Independent auditing
-External auditors can verify execution history without trusting the runtime.
-
-### Minimal trusted components
-The system minimizes trust assumptions beyond the runtime and cryptographic primitives.
-
----
-
-# Architecture
-
-The system consists of several components that together provide verifiable execution history.
-
-```
-+----------------------+
-|  Execution Runtime   |
-+----------------------+
-           |
-           v
-+----------------------+
-|   Payload Hashing    |
-+----------------------+
-           |
-           v
-+----------------------+
-| CAS Evidence Store   |
-| (content addressed)  |
-+----------------------+
-           |
-           v
-+----------------------+
-| Transparency Log     |
-| (append-only ledger) |
-+----------------------+
-           |
-           v
-+----------------------+
-| Merkle Tree          |
-| log commitment       |
-+----------------------+
-           |
-           v
-+----------------------+
-| Signed Tree Head     |
-| checkpoint           |
-+----------------------+
-           |
-           v
-+----------------------+
-| Witness / Auditor    |
-| verification         |
-+----------------------+
-```
 
 Each layer contributes to the integrity of the execution record.
 
 ---
 
-# Core Components
+## Repository Structure
 
-### Execution Runtime
-Captures execution events and generates structured log entries.
+cmd/  
+CLI entry point
 
-### CAS Evidence Store
-Stores payload artifacts using content-addressable storage where the file name is the hash of the content.
+execution/  
+execution pipeline
 
-### Transparency Log
-An append-only ledger where each entry references the hash of the previous entry, forming a hash chain.
+log/  
+transparency log, Merkle tree, checkpoint logic
 
-### Merkle Tree
-Computes a Merkle root across log entries, producing a cryptographic commitment to the log state.
-
-### Signed Tree Head
-A checkpoint containing the Merkle root, log size, and signature.
-
-### Witness / Verification
-Independent verification of log consistency and checkpoint integrity.
-
-### Auditor
-Recomputes hashes and verifies that the transparency log state matches the published checkpoint.
+cas/  
+content-addressable storage implementation
 
 ---
 
-# Example Log Entry
+## Example Log Entry
 
-```
 {
   "seq": 120,
   "timestamp": 1710001234,
@@ -149,142 +111,97 @@ Recomputes hashes and verifies that the transparency log state matches the publi
   "prev_hash": "d1a8e1...",
   "entry_hash": "4bc2a9..."
 }
-```
 
-Each entry references the previous entry through `prev_hash`, creating a verifiable chain of execution records.
-
----
-
-# Security Guarantees
-
-Wazulu Execution is designed to provide the following guarantees.
-
-### Tamper-evident history
-Modifying or deleting log entries breaks the hash chain and becomes detectable.
-
-### Commitment to log state
-The Merkle root commits to the full set of recorded events.
-
-### Checkpoint integrity
-Signed Tree Heads provide verifiable commitments to log state.
-
-### Independent verification
-Auditors can recompute hashes and verify Merkle commitments without trusting the system operator.
+Each entry references the previous entry through prev_hash forming a verifiable hash chain.
 
 ---
 
-# Threat Model and Limitations
+## Signed Tree Head (Checkpoint)
 
-Wazulu Execution provides cryptographic integrity guarantees for recorded events but does not protect against all possible threats.
+Example output:
 
-## Assumptions
+Signed Tree Head  
+Tree Size : 27  
+Timestamp : 1773324915  
+Signature : 8050564f207b5b30...
 
-The system assumes:
-
-• the execution runtime correctly records events  
-• cryptographic hash functions remain collision resistant  
-• signing keys are securely managed  
-• the host environment is trusted  
-
-## Limitations
-
-The prototype does not attempt to provide:
-
-• distributed consensus  
-• Byzantine fault tolerance  
-• secure hardware attestation  
-• protection against a compromised runtime environment  
-
-If the execution runtime itself is malicious or compromised, it could choose not to record events at all.
-
-The system therefore focuses on making recorded history tamper-evident, not guaranteeing that every possible event was recorded.
+The Signed Tree Head commits to the entire execution history at that moment.
 
 ---
 
-# Quick Start
+## Witness Cosigning
 
-Clone the repository
+The architecture supports an optional witness cosigning step where an external service signs the Signed Tree Head.
 
-```
-git clone https://github.com/USERNAME/wazulu-execution
-cd wazulu-execution
-```
+If no witness server is available the engine continues without cosigning.
 
-Build
+Example runtime message:
 
-```
-go build ./cmd/wz
-```
+Witness step skipped (no witness server running)
 
-Run the execution engine
+---
 
-```
+## CLI Commands
+
+Run execution pipeline
+
 ./wz exec
-```
 
-Verify log integrity
+Verify ledger integrity
 
-```
 ./wz verify
-```
 
-Run a full audit
+Future capability
 
-```
-./wz audit
-```
-
-Example verification command
-
-```
-./wz verify ledger.jsonl
-```
+./wz prove <entry_seq>
 
 ---
 
-# Repository Structure
+## Quick Start
 
-```
-wazulu-execution/
+git clone https://github.com/WAZULU503/wazulu-execution  
+cd wazulu-execution  
 
-README.md
-LICENSE
-SECURITY.md
-CONTRIBUTING.md
-go.mod
-.gitignore
+go build -o wz ./cmd/wz  
 
-cmd/
-execution/
-log/
-cas/
+./wz exec  
 
-docs/
-examples/
-```
+./wz verify  
 
 ---
 
-# Project Status
+## Security Model
 
-Research prototype.
+Wazulu Execution provides tamper-evident logging, not full system security.
 
-The repository demonstrates an architecture for verifiable execution logging and transparency verification. It is not production software.
+Assumptions
+
+cryptographic hash functions remain secure  
+signing keys are protected  
+the runtime environment is trusted  
+
+The system does not attempt to provide
+
+distributed consensus  
+Byzantine fault tolerance  
+secure hardware attestation  
+protection against a compromised runtime  
 
 ---
 
-# Author
+## Author
 
-Wazulu
+Wazulu the ill Dravidian 
+https://github.com/WAZULU503
 
 ---
 
-# License
+## License
 
 MIT License
+EOF
 
----
+git add README.md
+git commit -m "Finalize production README"
+git push
 
-# Final Note
-
-This project explores the idea that system behavior should be verifiable rather than trusted, using cryptographic data structures and append-only transparency logs.
