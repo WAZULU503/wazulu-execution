@@ -20,7 +20,6 @@ Wazulu Execution records events in a hash-chained transparency log, commits the 
 
 Execution pipeline:
 
-```
 Execution Event
 │
 ▼
@@ -37,7 +36,7 @@ Signed Tree Head
 │
 ▼
 Verification / Audit
-```
+
 
 The goal is to make system behavior cryptographically auditable.
 
@@ -112,6 +111,7 @@ Each layer contributes to the integrity of the execution record.
 ---
 
 ## Example Log Entry
+
 
 ```json
 {
