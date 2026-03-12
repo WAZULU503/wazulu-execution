@@ -1,20 +1,44 @@
-# remove the duplicate hash() function from verify.go automatically
-awk '
-BEGIN{skip=0}
-{
-  if(skip==0 && $0 ~ /^func hash\(/){skip=1; brace=0}
-  if(skip==1){
-      brace+=gsub(/{/,"{")
-      brace-=gsub(/}/,"}")
-      if(brace<=0){skip=0; next}
-      next
-  }
-  print
-}' log/verify.go > log/verify.go.tmp && mv log/verify.go.tmp log/verify.go
+package log
 
-# rebuild
-go build -o wz ./cmd/wz
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"os"
+)
 
-# run program
-./wz exec
-./wz verify
+// VerifyLedger scans the ledger and ensures the hash chain is intact
+func VerifyLedger() error {
+
+	file, err := os.Open(LedgerFile)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+
+	var prev Entry
+	first := true
+
+	for scanner.Scan() {
+
+		var entry Entry
+		err := json.Unmarshal(scanner.Bytes(), &entry)
+		if err != nil {
+			return err
+		}
+
+		if !first {
+			if entry.PrevHash != prev.EntryHash {
+				return fmt.Errorf("ledger integrity violation at seq %d", entry.Seq)
+			}
+		}
+
+		prev = entry
+		first = false
+	}
+
+	fmt.Println("Ledger verification OK")
+	return nil
+}
